@@ -7,6 +7,7 @@ import SkillGap from './pages/SkillGap';
 import CourseRecommendations from './pages/CourseRecommendations';
 import CareerRoadmap from './pages/CareerRoadmap';
 import Chatbot from './pages/Chatbot';
+import NlpArchitecture from './pages/NlpArchitecture';
 import About from './pages/About';
 
 export default function App() {
@@ -21,6 +22,7 @@ export default function App() {
           <Route path="/recommendations" element={<CourseRecommendations />} />
           <Route path="/roadmap" element={<CareerRoadmap />} />
           <Route path="/chatbot" element={<Chatbot />} />
+          <Route path="/nlp-architecture" element={<NlpArchitecture />} />
           <Route path="/about" element={<About />} />
         </Route>
       </Routes>

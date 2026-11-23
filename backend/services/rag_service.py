@@ -3,6 +3,7 @@ rag_service.py - Retrieval-Augmented Generation service.
 
 Handles PDF document uploads, text chunking, and TF-IDF based retrieval.
 Optionally uses Google Gemini API to generate answers from context.
+Supports multilingual output (English, Hindi, Marathi) and inspection endpoints.
 """
 
 import os
@@ -188,7 +189,29 @@ def search(query, top_k=5):
     return results[:top_k]
 
 
-def generate_answer(question, context_chunks, api_key=None):
+def build_rag_prompt(question: str, context: str, language: str = "en") -> str:
+    """Construct standard RAG prompt for Google Gemini."""
+    lang_instruction = ""
+    if language == "hi":
+        lang_instruction = "\nIMPORTANT: Provide your response completely in fluent Hindi (हिन्दी) using Devanagari script, while keeping essential technical terms clear."
+    elif language == "mr":
+        lang_instruction = "\nIMPORTANT: Provide your response completely in fluent Marathi (मराठी) using Devanagari script, while keeping essential technical terms clear."
+
+    prompt = f"""You are an intelligent academic advisor AI assistant for university engineering students.
+Answer the question based on the provided context extracted from academic documents (syllabus, guidelines, policies).
+If the user is asking for a summary or overview, provide a comprehensive, structured summary highlighting key topics, regulations, and credit requirements.
+Cite the relevant page numbers whenever making statements.{lang_instruction}
+
+Context:
+{context}
+
+Question: {question}
+
+Answer:"""
+    return prompt
+
+
+def generate_answer(question, context_chunks, api_key=None, language="en"):
     """
     Generate an answer using context chunks.
     If LLM_API_KEY is set, uses Google Gemini API.
@@ -198,6 +221,7 @@ def generate_answer(question, context_chunks, api_key=None):
         question: User's question
         context_chunks: List of relevant text chunks
         api_key: Optional API key for Gemini
+        language: Language code ('en', 'hi', 'mr')
 
     Returns:
         Dict with answer, sources, passages, and whether AI was used
@@ -216,35 +240,38 @@ def generate_answer(question, context_chunks, api_key=None):
     # If API key is available, use Gemini
     if api_key:
         try:
-            answer = _call_gemini(question, context, api_key)
+            answer = _call_gemini(question, context, api_key, language=language)
             return {
                 "answer": answer,
                 "sources": sources,
                 "ai_generated": True,
-                "model": "gemini"
+                "model": "gemini-2.5-flash",
+                "language": language
             }
         except Exception as e:
             # Fall back to formatted passages with notification
-            formatted_passages = _format_passages_answer(question, context_chunks, err=str(e))
+            formatted_passages = _format_passages_answer(question, context_chunks, language=language, err=str(e))
             return {
                 "answer": formatted_passages,
                 "passages": [chunk["text"] for chunk in context_chunks[:4]],
                 "sources": sources,
-                "ai_generated": False
+                "ai_generated": False,
+                "language": language
             }
 
     # No API key - format retrieved passages neatly with citations and relevance scores
-    formatted_passages = _format_passages_answer(question, context_chunks)
+    formatted_passages = _format_passages_answer(question, context_chunks, language=language)
     return {
         "answer": formatted_passages,
         "passages": [chunk["text"] for chunk in context_chunks[:4]],
         "sources": sources,
         "ai_generated": False,
+        "language": language,
         "note": "Precision citation mode active. Set LLM_API_KEY in .env for generative conversational answers."
     }
 
 
-def _format_passages_answer(question, context_chunks, err=None):
+def _format_passages_answer(question, context_chunks, language="en", err=None):
     """Format retrieved passages into a clean, structured answer."""
     is_overview = any(chunk.get("is_overview") for chunk in context_chunks)
 
@@ -252,12 +279,27 @@ def _format_passages_answer(question, context_chunks, err=None):
     if err:
         lines.append(f"*(AI generation notice: {err}. Displaying verified document passages)*\n")
 
-    if is_overview:
-        lines.append("### 📄 Document Summary & Core Academic Overview")
-        lines.append("Here are the key introductory guidelines and regulatory details extracted from the document:\n")
+    if language == "hi":
+        if is_overview:
+            lines.append("### 📄 दस्तावेज़ अवलोकन और मुख्य शैक्षणिक दिशानिर्देश")
+            lines.append("दस्तावेज़ से प्राप्त आवश्यक विनियम और मुख्य पाठ्यक्रम विवरण:\n")
+        else:
+            lines.append("### 📚 प्रासंगिक शैक्षणिक अंश (Academic Passages)")
+            lines.append(f"आपके प्रश्न **\"{question}\"** से संबंधित प्रमुख खंड नीचे दिए गए हैं:\n")
+    elif language == "mr":
+        if is_overview:
+            lines.append("### 📄 दस्तऐवज सारांश आणि मुख्य शैक्षणिक मार्गदर्शक तत्त्वे")
+            lines.append("दस्तऐवजातून काढलेले महत्त्वाचे नियम आणि शैक्षणिक तपशील:\n")
+        else:
+            lines.append("### 📚 संबंधित शैक्षणिक परिच्छेद (Academic Passages)")
+            lines.append(f"तुमच्या **\"{question}\"** या प्रश्नाशी संबंधित महत्त्वाचे विभाग खालीलप्रमाणे आहेत:\n")
     else:
-        lines.append("### 📚 Relevant Academic Passages")
-        lines.append(f"Here are the most relevant sections addressing **\"{question}\"**:\n")
+        if is_overview:
+            lines.append("### 📄 Document Summary & Core Academic Overview")
+            lines.append("Here are the key introductory guidelines and regulatory details extracted from the document:\n")
+        else:
+            lines.append("### 📚 Relevant Academic Passages")
+            lines.append(f"Here are the most relevant sections addressing **\"{question}\"**:\n")
 
     for i, chunk in enumerate(context_chunks, 1):
         meta = chunk.get("metadata", {})
@@ -265,29 +307,16 @@ def _format_passages_answer(question, context_chunks, err=None):
         filename = meta.get("filename", "Academic Document")
         score = chunk.get("score", 0)
         score_text = f" • Match Score: {int(score * 100)}%" if score else ""
-        
+
         lines.append(f"**Section {i} — {filename} (Page {page}){score_text}:**")
         lines.append(f"> {chunk['text'].strip()}\n")
 
     return "\n".join(lines)
 
 
-def _call_gemini(question, context, api_key):
+def _call_gemini(question, context, api_key, language="en"):
     """Call Google Gemini API to generate an answer from context."""
-    # Support modern Gemini endpoints
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-
-    prompt = f"""You are an intelligent academic advisor AI assistant for university students.
-Answer the question based on the provided context extracted from academic documents (syllabus, guidelines, policies).
-If the user is asking for a summary or overview, provide a comprehensive, structured summary highlighting key topics, regulations, and credit requirements.
-Cite the relevant page numbers whenever making statements.
-
-Context:
-{context}
-
-Question: {question}
-
-Answer:"""
+    prompt = build_rag_prompt(question, context, language)
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
@@ -298,36 +327,82 @@ Answer:"""
     }
 
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
 
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError:
-        # Fall back to gemini-1.5-flash if 2.5 is not available on key
-        fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        req_fallback = urllib.request.Request(
-            fallback_url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST"
-        )
-        with urllib.request.urlopen(req_fallback, timeout=30) as response:
-            result = json.loads(response.read().decode("utf-8"))
+    # Try gemini-2.5-flash then fallback to gemini-1.5-flash
+    endpoints = [
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    ]
 
-    # Extract the generated text
-    candidates = result.get("candidates", [])
-    if candidates:
-        parts = candidates[0].get("content", {}).get("parts", [])
-        if parts:
-            return parts[0].get("text", "No answer generated.")
+    last_error = None
+    for url in endpoints:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST"
+            )
+            with urllib.request.urlopen(req, timeout=25) as response:
+                result = json.loads(response.read().decode("utf-8"))
+                candidates = result.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    if parts:
+                        return parts[0].get("text", "No answer generated.")
+        except Exception as e:
+            last_error = e
+
+    if last_error:
+        raise last_error
 
     return "Could not generate an answer from the API."
+
+
+def inspect_rag_pipeline(question: str, language: str = "en", api_key: str = None) -> dict:
+    """
+    RAG & Prompt Engineering Inspector:
+    Returns the exact system prompt, retrieved chunks with similarity scores,
+    and Gemini LLM response.
+    """
+    # Ensure sample document is indexed if store is empty
+    if not document_store:
+        candidates = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "documents", "sample_academic_regulations_syllabus.pdf"),
+            os.path.join(os.getcwd(), "documents", "sample_academic_regulations_syllabus.pdf"),
+            os.path.join(os.getcwd(), "academic-advisor-NLP--main", "documents", "sample_academic_regulations_syllabus.pdf"),
+        ]
+        sample_path = next((p for p in candidates if os.path.exists(p)), None)
+        if sample_path:
+            process_document(sample_path, os.path.basename(sample_path))
+
+    relevant_chunks = search(question, top_k=4)
+    context_text = "\n\n".join([chunk["text"] for chunk in relevant_chunks])
+    constructed_prompt = build_rag_prompt(question, context_text, language)
+
+    # Generate answer
+    ans_data = generate_answer(question, relevant_chunks, api_key=api_key, language=language)
+
+    return {
+        "question": question,
+        "language": language,
+        "total_store_chunks": len(document_store),
+        "retrieved_chunks": [
+            {
+                "rank": idx + 1,
+                "filename": c["metadata"].get("filename", "Doc"),
+                "page": c["metadata"].get("page", 1),
+                "score": c.get("score", 0),
+                "text": c["text"],
+                "is_overview": c.get("is_overview", False)
+            }
+            for idx, c in enumerate(relevant_chunks)
+        ],
+        "system_prompt": constructed_prompt,
+        "llm_response": ans_data.get("answer", ""),
+        "ai_generated": ans_data.get("ai_generated", False),
+        "model": ans_data.get("model", "offline_citation_engine")
+    }
 
 
 def get_store_info():

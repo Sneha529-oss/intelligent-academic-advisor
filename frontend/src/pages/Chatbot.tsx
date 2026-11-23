@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Upload, FileText, Send, AlertCircle, Sparkles, BookOpen, CheckCircle, Info } from 'lucide-react';
+import { MessageSquare, Upload, FileText, Send, AlertCircle, Sparkles, BookOpen, CheckCircle, Info, Languages } from 'lucide-react';
 import api from '../api/client';
 import LoadingSpinner from '../components/LoadingSpinner';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 
 interface Message {
   sender: 'user' | 'bot';
@@ -26,6 +27,7 @@ export default function Chatbot() {
   ]);
   const [inputQuery, setInputQuery] = useState('');
   const [loading, setLoading] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState<'en' | 'hi' | 'mr'>('en');
 
   // Document upload state
   const [file, setFile] = useState<File | null>(null);
@@ -122,7 +124,7 @@ export default function Chatbot() {
     setMessages(prev => [...prev, { sender: 'user', text }]);
     setLoading(true);
 
-    api.post('/chat', { question: text })
+    api.post('/chat', { question: text, language: selectedLanguage })
       .then(res => {
         const data = res.data;
         setMessages(prev => [
@@ -273,12 +275,26 @@ export default function Chatbot() {
         {/* Right Column: Chat Interface (8 cols) */}
         <div className="lg:col-span-8 bg-white rounded-xl shadow-sm border border-gray-200 flex flex-col h-[600px]">
           {/* Chat Header */}
-          <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-slate-50 rounded-t-xl">
+          <div className="p-3.5 sm:p-4 border-b border-gray-100 flex items-center justify-between bg-slate-50 rounded-t-xl gap-2 flex-wrap">
             <div className="flex items-center gap-2">
               <div className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
               <span className="font-semibold text-gray-800 text-sm">Advisor Knowledge Assistant</span>
             </div>
-            <span className="text-xs text-gray-500">Document Retrieval Engine</span>
+            
+            {/* Regional Language Selector */}
+            <div className="flex items-center gap-1.5 text-xs">
+              <Languages className="h-3.5 w-3.5 text-indigo-600" />
+              <span className="text-gray-500 hidden sm:inline">Language:</span>
+              <select
+                value={selectedLanguage}
+                onChange={e => setSelectedLanguage(e.target.value as 'en' | 'hi' | 'mr')}
+                className="px-2 py-1 bg-white border border-gray-300 rounded-md text-xs font-semibold text-gray-700 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              >
+                <option value="en">English</option>
+                <option value="hi">हिन्दी (Hindi)</option>
+                <option value="mr">मराठी (Marathi)</option>
+              </select>
+            </div>
           </div>
 
           {/* Messages Scroll Area */}
@@ -295,7 +311,11 @@ export default function Chatbot() {
                       : 'bg-slate-100 text-gray-900 rounded-bl-none border border-slate-200'
                   }`}
                 >
-                  <p className="whitespace-pre-wrap">{m.text}</p>
+                  {m.sender === 'user' ? (
+                    <p className="whitespace-pre-wrap">{m.text}</p>
+                  ) : (
+                    <MarkdownRenderer content={m.text} />
+                  )}
 
                   {/* Passages fallback */}
                   {m.passages && m.passages.length > 0 && (

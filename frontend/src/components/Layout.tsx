@@ -8,6 +8,7 @@ import {
   BookOpen,
   Map,
   MessageSquare,
+  Network,
   Info,
   GraduationCap,
   Menu,
@@ -22,6 +23,7 @@ const navItems = [
   { to: '/recommendations', label: 'Recommendations', icon: BookOpen },
   { to: '/roadmap', label: 'Career Roadmap', icon: Map },
   { to: '/chatbot', label: 'AI Chatbot', icon: MessageSquare },
+  { to: '/nlp-architecture', label: 'NLP Architecture', icon: Network },
   { to: '/about', label: 'About', icon: Info },
 ];
 

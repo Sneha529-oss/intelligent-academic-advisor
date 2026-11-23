@@ -19,6 +19,7 @@ DOCUMENTS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docume
 class ChatRequest(BaseModel):
     """Request body for chat questions."""
     question: str
+    language: str = "en"
 
 
 @router.post("/documents/upload")
@@ -143,7 +144,7 @@ def chat(request: ChatRequest):
         api_key = os.getenv("LLM_API_KEY", "").strip() or None
 
         # Generate answer
-        result = generate_answer(request.question, relevant_chunks, api_key)
+        result = generate_answer(request.question, relevant_chunks, api_key, language=request.language)
 
         return sanitize_json(result)
 

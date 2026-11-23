@@ -19,7 +19,7 @@ from routes.recommendations import router as recommendations_router
 from routes.skill_gap import router as skill_gap_router
 from routes.roadmap import router as roadmap_router
 from routes.chatbot import router as chatbot_router
-from routes.nlp_features import router as nlp_router
+from routes.nlp_features import router as nlp_router, lab_router as nlp_lab_router
 
 # Load environment variables
 load_dotenv()
@@ -55,6 +55,7 @@ app.include_router(skill_gap_router)
 app.include_router(roadmap_router)
 app.include_router(chatbot_router)
 app.include_router(nlp_router)
+app.include_router(nlp_lab_router)
 
 
 @app.on_event("startup")
